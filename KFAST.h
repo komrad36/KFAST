@@ -15,12 +15,12 @@
 #include <immintrin.h>
 #include <vector>
 
-struct MyKeypoint {
+struct FASTKeypoint {
 	int32_t x;
 	int32_t y;
 	uint8_t score;
 
-	MyKeypoint(const int32_t _x, const int32_t _y, const uint8_t _score) : x(_x), y(_y), score(_score) {}
+	FASTKeypoint(const int32_t _x, const int32_t _y, const uint8_t _score) : x(_x), y(_y), score(_score) {}
 
 };
 
@@ -36,7 +36,7 @@ __inline__
 void processCols(int32_t& num_corners, const uint8_t* __restrict & ptr, int32_t& j,
 	const int32_t* const __restrict offsets, const __m256i& ushft, const __m256i& t, const int32_t cols,
 	const __m256i& consec, int32_t* const __restrict corners, uint8_t* const __restrict cur,
-	std::vector<MyKeypoint>& keypoints, const int32_t i) {
+	std::vector<FASTKeypoint>& keypoints, const int32_t i) {
 	// ppt is an integer vector that now holds 32 of point p
 	__m256i ppt = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(ptr));
 
@@ -260,7 +260,7 @@ void processCols(int32_t& num_corners, const uint8_t* __restrict & ptr, int32_t&
 
 template <const bool nonmax_suppression>
 void KFAST(const uint8_t* __restrict const data, const int32_t cols, const int32_t rows,
-	std::vector<MyKeypoint>& keypoints, const uint8_t threshold) {
+	std::vector<FASTKeypoint>& keypoints, const uint8_t threshold) {
 	keypoints.clear();
 	keypoints.reserve(8500);
 
