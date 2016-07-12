@@ -6,7 +6,7 @@
 *	kareem.omar@uah.edu
 *	https://github.com/komrad36
 *
-*	Last updated Jul 8, 2016
+*	Last updated Jul 11, 2016
 *******************************************************************/
 
 #pragma once
@@ -15,18 +15,18 @@
 #include <immintrin.h>
 #include <vector>
 
-struct MyKeypoint {
+struct Keypoint {
 	int32_t x;
 	int32_t y;
 	uint8_t score;
 
-	MyKeypoint(const int32_t _x, const int32_t _y, const uint8_t _score) : x(_x), y(_y), score(_score) {}
+	Keypoint(const int32_t _x, const int32_t _y, const uint8_t _score) : x(_x), y(_y), score(_score) {}
 
 };
 
 // Yes, this function MUST be inlined.
 // Even if your compiler thinks otherwise.
-// 2300 -> 2900 microseconds without forced inlining.
+// 2000 -> 2600 microseconds without forced inlining.
 template<const bool full, const bool nonmax_suppression>
 #ifdef _MSC_VER
 __forceinline
@@ -36,7 +36,7 @@ __inline__
 void processCols(int32_t& num_corners, const uint8_t* __restrict & ptr, int32_t& j,
 	const int32_t* const __restrict offsets, const __m256i& ushft, const __m256i& t, const int32_t cols,
 	const __m256i& consec, int32_t* const __restrict corners, uint8_t* const __restrict cur,
-	std::vector<MyKeypoint>& keypoints, const int32_t i) {
+	std::vector<Keypoint>& keypoints, const int32_t i) {
 	// ppt is an integer vector that now holds 32 of point p
 	__m256i ppt = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(ptr));
 
@@ -171,7 +171,7 @@ void processCols(int32_t& num_corners, const uint8_t* __restrict & ptr, int32_t&
 				// --- BEGIN COMPUTE CORNER SCORE ---
 
 				// inlining gives measurably better performance but g++
-				// refuses to so I do so manually
+				// refuses to so I do, manually
 
 				const uint8_t* ptrpk = ptr + k;
 
@@ -252,24 +252,24 @@ void processCols(int32_t& num_corners, const uint8_t* __restrict & ptr, int32_t&
 
 			}
 			else {
-				keypoints.emplace_back(j + k, i, -1);
+				keypoints.emplace_back(j + k, i, 0);
 			}
 		}
 	}
 }
 
 template <const bool nonmax_suppression>
-void KFAST(const uint8_t* __restrict const data, const int32_t cols, const int32_t rows,
-	std::vector<MyKeypoint>& keypoints, const uint8_t threshold) {
+void KFAST(const uint8_t* __restrict const data, const int32_t cols, const int32_t rows, const int32_t stride,
+	std::vector<Keypoint>& keypoints, const uint8_t threshold) {
 	keypoints.clear();
 	keypoints.reserve(8500);
 
-	// Rosten's circle pixels in the order 9, 8, 7, 6, 5, 4, 3, 2, 1, 16, 15, 14, 13, 12, 11, 10, then repeats 9, 8, 7, 6, 5, 4, 3, 2
-	const int32_t offsets[24] = { 3 * cols, 3 * cols + 1, 2 * cols + 2, cols + 3, 3, -cols + 3, -2 * cols + 2,
-		-3 * cols + 1, -3 * cols, -3 * cols - 1, -2 * cols - 2, -cols - 3, -3, cols - 3, 2 * cols - 2,
-		3 * cols - 1, 3 * cols, 3 * cols + 1, 2 * cols + 2, cols + 3, 3, -cols + 3, -2 * cols + 2, -3 * cols + 1 };
+	// Rosten's circle pixels in the order 9, 8, 7, 6, 5, 4, 3, 2, 1, 16, 15, 14, 13, 12, 11, 10, then repeat 9, 8, 7, 6, 5, 4, 3, 2
+	const int32_t offsets[24] = { 3 * stride, 3 * stride + 1, 2 * stride + 2, stride + 3, 3, -stride + 3, -2 * stride + 2,
+		-3 * stride + 1, -3 * stride, -3 * stride - 1, -2 * stride - 2, -stride - 3, -3, stride - 3, 2 * stride - 2,
+		3 * stride - 1, 3 * stride, 3 * stride + 1, 2 * stride + 2, stride + 3, 3, -stride + 3, -2 * stride + 2, -3 * stride + 1 };
 
-	// no epu8 comparisons so in order to do them we must use epi8 comparisons and shift everything down by 128 (==-128)
+	// no epu8 comparisons so in order to do them we must use epi8 comparisons and shift everything down by 128
 	// add, xor, and sub 128 all do the same thing. Do it to both comparands before epi8 comparison to get
 	// the equivalent unshifted epu8 comparison.
 	const __m256i ushft = _mm256_set1_epi8(-128);
@@ -286,7 +286,7 @@ void KFAST(const uint8_t* __restrict const data, const int32_t cols, const int32
 	int32_t* cornerbuf[3];
 	if (nonmax_suppression) {
 		// allocate enough buffer for 3 rows of uin8_t and then 3 rows of int32_t
-		rawbuf = reinterpret_cast<uint8_t*>(malloc(cols * 3 * (sizeof(int32_t) + sizeof(uint8_t)) + 4 * sizeof(int32_t)));
+		rawbuf = reinterpret_cast<uint8_t*>(_mm_malloc(cols * 3 * (sizeof(int32_t) + sizeof(uint8_t)) + 4 * sizeof(int32_t), 4096));
 
 		// each rowbuf entry is a pointer to a uint8_t row buffer
 		rowbuf[0] = rawbuf;
@@ -308,7 +308,7 @@ void KFAST(const uint8_t* __restrict const data, const int32_t cols, const int32
 	for (int32_t i = 3; i < rows - 2; ++i) {
 
 		// ptr points to the first valid offsets in the row but HASN'T retrieved it yet
-		const uint8_t* ptr = data + i*cols + 3;
+		const uint8_t* ptr = data + i*stride + 3;
 
 		uint8_t* cur = nullptr;
 		int32_t* corners = nullptr;
@@ -376,5 +376,5 @@ void KFAST(const uint8_t* __restrict const data, const int32_t cols, const int32
 		}
 	}
 
-	if (nonmax_suppression) free(rawbuf);
+	if (nonmax_suppression) _mm_free(rawbuf);
 }
