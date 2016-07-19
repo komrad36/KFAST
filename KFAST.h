@@ -8,6 +8,20 @@
 *
 *	Last updated Jul 11, 2016
 *******************************************************************/
+//
+// Implementation of the FAST corner feature detector with optional
+// non-maximal suppression, as described in the 2006 paper by
+// Rosten and Drummond:
+// "Machine learning for high-speed corner detection"
+//         Edward Rosten and Tom Drummond
+// https://www.edwardrosten.com/work/rosten_2006_machine.pdf
+//
+// My implementation uses AVX2, as well as many other careful
+// optimizations, to implement the FAST algorithm as described
+// in the paper but at great speed. This implementation
+// outperforms the reference implementation by 40-60%
+// while matching its output and capabilities.
+//
 
 #pragma once
 
@@ -285,7 +299,7 @@ void KFAST(const uint8_t* __restrict const data, const int32_t cols, const int32
 	uint8_t* rowbuf[3];
 	int32_t* cornerbuf[3];
 	if (nonmax_suppression) {
-		// allocate enough buffer for 3 rows of uin8_t and then 3 rows of int32_t
+		// allocate enough buffer for 3 rows of uint8_t and then 3 rows of int32_t
 		rawbuf = reinterpret_cast<uint8_t*>(_mm_malloc(cols * 3 * (sizeof(int32_t) + sizeof(uint8_t)) + 4 * sizeof(int32_t), 4096));
 
 		// each rowbuf entry is a pointer to a uint8_t row buffer
