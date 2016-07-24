@@ -45,7 +45,7 @@ template<const bool full, const bool nonmax_suppression>
 #ifdef _MSC_VER
 __forceinline
 #else
-__inline__
+inline __attribute__((always_inline))
 #endif
 void processCols(int32_t& num_corners, const uint8_t* __restrict & ptr, int32_t& j,
 	const int32_t* const __restrict offsets, const __m256i& ushft, const __m256i& t, const int32_t cols,
