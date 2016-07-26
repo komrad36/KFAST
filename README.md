@@ -10,8 +10,7 @@ Modern g++ and processor *highly* recommended.
 
  The fastest CPU implementation of the FAST feature detector for computer vision, as described in the 2006 paper by Rosten and Drummond:
  
-     "Machine learning for high-speed corner detection"
-     Edward Rosten and Tom Drummond
+"Machine learning for high-speed corner detection" by Edward Rosten and Tom Drummond
 https://www.edwardrosten.com/work/rosten_2006_machine.pdf
 
  My implementation uses AVX2, multithreading, and many other careful optimizations to implement the FAST algorithm as described in the paper, but at great speed. This implementation outperforms the reference implementation by 40-60% single-threaded or 500% multi-threaded (!) while exactly matching the reference implementation's output and capabilities.
