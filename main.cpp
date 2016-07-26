@@ -16,11 +16,12 @@
 //         Edward Rosten and Tom Drummond
 // https://www.edwardrosten.com/work/rosten_2006_machine.pdf
 //
-// My implementation uses AVX2, as well as many other careful
-// optimizations, to implement the FAST algorithm as described
-// in the paper but at great speed. This implementation
-// outperforms the reference implementation by 40-60%
-// while matching its output and capabilities.
+// My implementation uses AVX2, multithreading, and 
+// many other careful optimizations to implement the
+// FAST algorithm as described in the paper, but at great speed.
+// This implementation outperforms the reference implementation by 40-60%
+// single-threaded or 500% multi-threaded (!) while exactly matching
+// the reference implementation's output and capabilities.
 //
 
 #include <chrono>
@@ -48,10 +49,11 @@ int main(int argc, char* argv[]) {
 
 	constexpr bool display_images = false;
 	constexpr bool nonmax_suppression = true;
-	constexpr auto warmups = 100;
+	constexpr auto warmups = 50;
 	constexpr auto Kruns = 400;
-	constexpr auto CVruns = 400;
+	constexpr auto CVruns = 1;
 	constexpr auto thresh = 50;
+	constexpr bool multithreading = true;
 	constexpr char name[] = "test.jpg";
 
 	cv::Mat image;
@@ -63,12 +65,12 @@ int main(int argc, char* argv[]) {
 
 	std::vector<Keypoint> my_keypoints;
 	// warmup
-	for (int i = 0; i < warmups; ++i) KFAST<nonmax_suppression>(image.data, image.cols, image.rows, image.cols, my_keypoints, thresh);
+	for (int i = 0; i < warmups; ++i) KFAST<multithreading, nonmax_suppression>(image.data, image.cols, image.rows, static_cast<int>(image.step), my_keypoints, thresh);
 	my_keypoints.clear();
 	{
 		high_resolution_clock::time_point start = high_resolution_clock::now();
 		for (int32_t i = 0; i < Kruns; ++i) {
-			KFAST<nonmax_suppression>(image.data, image.cols, image.rows, image.cols, my_keypoints, thresh);
+			KFAST<multithreading, nonmax_suppression>(image.data, image.cols, image.rows, static_cast<int>(image.step), my_keypoints, thresh);
 		}
 		high_resolution_clock::time_point end = high_resolution_clock::now();
 		nanoseconds sum = (end - start) / Kruns;

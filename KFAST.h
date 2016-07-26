@@ -6,7 +6,7 @@
 *	kareem.omar@uah.edu
 *	https://github.com/komrad36
 *
-*	Last updated Jul 11, 2016
+*	Last updated Jul 25, 2016
 *******************************************************************/
 //
 // Implementation of the FAST corner feature detector with optional
@@ -16,16 +16,19 @@
 //         Edward Rosten and Tom Drummond
 // https://www.edwardrosten.com/work/rosten_2006_machine.pdf
 //
-// My implementation uses AVX2, as well as many other careful
-// optimizations, to implement the FAST algorithm as described
-// in the paper but at great speed. This implementation
-// outperforms the reference implementation by 40-60%
-// while matching its output and capabilities.
+// My implementation uses AVX2, multithreading, and 
+// many other careful optimizations to implement the
+// FAST algorithm as described in the paper, but at great speed.
+// This implementation outperforms the reference implementation by 40-60%
+// single-threaded or 500% multi-threaded (!) while exactly matching
+// the reference implementation's output and capabilities.
 //
 
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
+#include <future>
 #include <immintrin.h>
 #include <vector>
 
@@ -50,7 +53,7 @@ inline __attribute__((always_inline))
 void processCols(int32_t& num_corners, const uint8_t* __restrict & ptr, int32_t& j,
 	const int32_t* const __restrict offsets, const __m256i& ushft, const __m256i& t, const int32_t cols,
 	const __m256i& consec, int32_t* const __restrict corners, uint8_t* const __restrict cur,
-	std::vector<Keypoint>& keypoints, const int32_t i) {
+	std::vector<Keypoint>& keypoints, const int32_t i, const int32_t start_row) {
 	// ppt is an integer vector that now holds 32 of point p
 	__m256i ppt = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(ptr));
 
@@ -173,7 +176,7 @@ void processCols(int32_t& num_corners, const uint8_t* __restrict & ptr, int32_t&
 		static_cast<uint32_t>(_mm256_movemask_epi8(_mm256_cmpgt_epi8(_mm256_max_epu8(ppt_max, pmt_max), consec))) :
 		static_cast<uint32_t>(_mm256_movemask_epi8(_mm256_cmpgt_epi8(_mm256_max_epu8(ppt_max, pmt_max), consec))) & last_cols_mask;
 
-	// for each of the 32 pixels considered in AVX vector,
+	// for each of the 32 pixels considered in vector,
 	// and while there are still corners left in the mask
 	for (int32_t k = 0; m; ++k, m >>= 1) {
 		// if this one is a corner
@@ -253,8 +256,7 @@ void processCols(int32_t& num_corners, const uint8_t* __restrict & ptr, int32_t&
 				// The overall single max is now found through a horizontal reduction of 'maxv'.
 				// This score represents the deviation of the most deviant region of 9 pixels.
 				// The answer resides in an epi16 but it will be in
-				// the range of a uint8_t for efficient removal from XMM
-				// (should become vmovd eax)
+				// the range of a uint8_t for efficient removal from the MM registers
 				maxv = _mm256_max_epi16(maxv, _mm256_permute4x64_epi64(maxv, 0b1110));
 				maxv = _mm256_max_epi16(maxv, _mm256_permute4x64_epi64(maxv, 0b11100101));
 				maxv = _mm256_max_epi16(maxv, _mm256_shuffle_epi32(maxv, 0b11100101));
@@ -266,16 +268,15 @@ void processCols(int32_t& num_corners, const uint8_t* __restrict & ptr, int32_t&
 
 			}
 			else {
-				keypoints.emplace_back(j + k, i, 0);
+				keypoints.emplace_back(j + k, start_row + i, 0);
 			}
 		}
 	}
 }
 
 template <const bool nonmax_suppression>
-void KFAST(const uint8_t* __restrict const data, const int32_t cols, const int32_t rows, const int32_t stride,
-	std::vector<Keypoint>& keypoints, const uint8_t threshold) {
-	keypoints.clear();
+void _KFAST(const uint8_t* __restrict const data, const int32_t cols, const int32_t start_row, const int32_t rows, const int32_t stride,
+	std::vector<Keypoint>& keypoints, const uint8_t threshold, const bool first_thread, const bool last_thread) {
 	keypoints.reserve(8500);
 
 	// Rosten's circle pixels in the order 9, 8, 7, 6, 5, 4, 3, 2, 1, 16, 15, 14, 13, 12, 11, 10, then repeat 9, 8, 7, 6, 5, 4, 3, 2
@@ -345,18 +346,24 @@ void KFAST(const uint8_t* __restrict const data, const int32_t cols, const int32
 			// these calls to processCols MUST be inlined for best performance, even if your compiler thinks otherwise
 			for (j = 3; j < cols - 35; j += 32, ptr += 32) {
 				processCols<true, nonmax_suppression>(num_corners, ptr, j, offsets, ushft, t,
-					cols, consec, corners, cur, keypoints, i);
+					cols, consec, corners, cur, keypoints, i, start_row);
 			}
 			// handle last few columns
 			processCols<false, nonmax_suppression>(num_corners, ptr, j, offsets, ushft, t,
-				cols, consec, corners, cur, keypoints, i);
+				cols, consec, corners, cur, keypoints, i, start_row);
 		}
 
 		if (nonmax_suppression) {
 			corners[-1] = num_corners;
 
-			// bail if it's the first row
-			if (i == 3) continue;
+			// for first thread: skip 3, rows - 3
+			// for inner threads: skip 3, 4, rows - 3
+			// for last thread: skip 3, 4
+
+			// if i == 3
+			// if not last thread and i == rows - 3
+			// if not first thread and i == 4
+			if ((!last_thread && i == rows - 3) || (!first_thread && i == 4) || i == 3) continue;
 
 			// last buffered row
 			const uint8_t* last = rowbuf[(i - 1) % 3];
@@ -384,7 +391,7 @@ void KFAST(const uint8_t* __restrict const data, const int32_t cols, const int32
 						cur[j - 1], cur[j], cur[j + 1],
 						last2[j - 1], last2[j], last2[j + 1],
 						0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0), ushft)))) == 0xFF) {
-					keypoints.emplace_back(j, i - 1, score);
+					keypoints.emplace_back(j, start_row + i - 1, score);
 				}
 			}
 		}
@@ -392,3 +399,44 @@ void KFAST(const uint8_t* __restrict const data, const int32_t cols, const int32
 
 	if (nonmax_suppression) _mm_free(rawbuf);
 }
+
+template <const bool multithreading, const bool nonmax_suppression>
+void KFAST(const uint8_t* __restrict const data, const int32_t cols, const int32_t rows, const int32_t stride,
+        std::vector<Keypoint>& keypoints, const uint8_t threshold) {
+        if (multithreading) {
+                const int32_t hw_concur = std::min(rows >> 4, static_cast<int32_t>(std::thread::hardware_concurrency()));
+                std::vector<std::vector<Keypoint>> thread_kps(hw_concur);
+                std::vector<std::future<void>> fut(hw_concur);
+
+                if (hw_concur == 1) {
+                        keypoints.clear();
+                        keypoints.reserve(8500);
+                        _KFAST<nonmax_suppression>(data, cols, 0, rows, stride, keypoints, threshold, true, true);
+                }
+                else {
+                        int row = (rows - 1) / hw_concur + 1;
+                        fut[0] = std::async(std::launch::async, _KFAST<nonmax_suppression>, data, cols, 0, row + 4, stride, std::ref(thread_kps[0]), threshold, true, false);
+                        int i = 1;
+                        for (; i < hw_concur - 1; ++i) {
+                                int start_row = row - 4;
+                                int delta = (rows - row - 1) / (hw_concur - i) + 1;
+                                fut[i] = std::async(std::launch::async, _KFAST<nonmax_suppression>, data + start_row*stride, cols, start_row, delta + 8, stride, std::ref(thread_kps[i]), threshold, false, false);
+                                row += delta;
+                        }
+                        int start_row = row - 4;
+                        fut[i] = std::async(std::launch::async, _KFAST<nonmax_suppression>, data + start_row*stride, cols, start_row, rows - start_row, stride, std::ref(thread_kps[i]), threshold, false, true);
+                        keypoints.clear();
+                        keypoints.reserve(8500);
+                        for (int j = 0; j <= i; ++j) {
+                                fut[j].wait();
+                                keypoints.insert(keypoints.end(), thread_kps[j].begin(), thread_kps[j].end());
+                        }
+                }
+        }
+        else {
+                keypoints.clear();
+                keypoints.reserve(8500);
+                _KFAST<nonmax_suppression>(data, cols, 0, rows, stride, keypoints, threshold, true, true);
+        }
+}
+
