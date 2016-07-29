@@ -384,13 +384,8 @@ void _KFAST(const uint8_t* __restrict const data, const int32_t cols, const int3
 				const uint8_t score = last[j];
 
 				// if score is higher than score of all 8 surrounding pixels, add keypoint!
-				if (static_cast<uint8_t>(_mm256_movemask_epi8(_mm256_cmpgt_epi8(
-					_mm256_xor_si256(_mm256_set1_epi8(score), ushft),
-					_mm256_xor_si256(_mm256_setr_epi8(
-						last[j - 1], last[j + 1],
-						cur[j - 1], cur[j], cur[j + 1],
-						last2[j - 1], last2[j], last2[j + 1],
-						0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0), ushft)))) == 0xFF) {
+				// NOTE: too many branches for short-circuit evaluation to be worth it here.
+				if ((score > last[j - 1]) & (score > last[j + 1]) & (score > cur[j - 1]) & (score > cur[j]) & (score > cur[j + 1]) & (score > last2[j - 1]) & (score > last2[j]) & (score > last2[j + 1])) {
 					keypoints.emplace_back(j, start_row + i - 1, score);
 				}
 			}

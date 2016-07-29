@@ -49,8 +49,8 @@ int main(int argc, char* argv[]) {
 
 	constexpr bool display_images = false;
 	constexpr bool nonmax_suppression = true;
-	constexpr auto warmups = 50;
-	constexpr auto Kruns = 400;
+	constexpr auto warmups = 100;
+	constexpr auto Kruns = 1000;
 	constexpr auto CVruns = 1;
 	constexpr auto thresh = 50;
 	constexpr bool multithreading = true;
