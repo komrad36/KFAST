@@ -246,7 +246,7 @@ void processCols(int32_t& num_corners, const uint8_t* __restrict & ptr, int32_t&
 				// minv now has the smallest of [0-8], [1-9], ..., [14-6], [15-7] (all 16 possible regions of 9 pixels)
 				// maxv now has the largest of  [0-8], [1-9], ..., [14-6], [15-7] (all 16 possible regions of 9 pixels)
 
-				// inside expression is just the negation of q1
+				// inside expression is just the negation of maxv
 				// to get expression of absolute deviation from center offsets, resulting in
 				// the greatest deviation among:
 				// [0-8], [1-9], ..., [14-6], [15-7] (all 16 possible regions of 9 pixels)
@@ -256,7 +256,8 @@ void processCols(int32_t& num_corners, const uint8_t* __restrict & ptr, int32_t&
 				// The overall single max is now found through a horizontal reduction of 'maxv'.
 				// This score represents the deviation of the most deviant region of 9 pixels.
 				// The answer resides in an epi16 but it will be in
-				// the range of a uint8_t for efficient removal from the MM registers
+				// the range of a uint8_t for efficient removal from the YMM
+				// (actually should just pull from XMM)
 				maxv = _mm256_max_epi16(maxv, _mm256_permute4x64_epi64(maxv, 0b1110));
 				maxv = _mm256_max_epi16(maxv, _mm256_permute4x64_epi64(maxv, 0b11100101));
 				maxv = _mm256_max_epi16(maxv, _mm256_shuffle_epi32(maxv, 0b11100101));
@@ -274,9 +275,9 @@ void processCols(int32_t& num_corners, const uint8_t* __restrict & ptr, int32_t&
 	}
 }
 
-template <const bool nonmax_suppression>
+template <const bool nonmax_suppression, const bool first_thread, const bool last_thread>
 void _KFAST(const uint8_t* __restrict const data, const int32_t cols, const int32_t start_row, const int32_t rows, const int32_t stride,
-	std::vector<Keypoint>& keypoints, const uint8_t threshold, const bool first_thread, const bool last_thread) {
+	std::vector<Keypoint>& keypoints, const uint8_t threshold) {
 	keypoints.reserve(8500);
 
 	// Rosten's circle pixels in the order 9, 8, 7, 6, 5, 4, 3, 2, 1, 16, 15, 14, 13, 12, 11, 10, then repeat 9, 8, 7, 6, 5, 4, 3, 2
@@ -406,20 +407,20 @@ void KFAST(const uint8_t* __restrict const data, const int32_t cols, const int32
                 if (hw_concur == 1) {
                         keypoints.clear();
                         keypoints.reserve(8500);
-                        _KFAST<nonmax_suppression>(data, cols, 0, rows, stride, keypoints, threshold, true, true);
+                        _KFAST<nonmax_suppression, true, true>(data, cols, 0, rows, stride, keypoints, threshold);
                 }
                 else {
                         int row = (rows - 1) / hw_concur + 1;
-                        fut[0] = std::async(std::launch::async, _KFAST<nonmax_suppression>, data, cols, 0, row + 4, stride, std::ref(thread_kps[0]), threshold, true, false);
+                        fut[0] = std::async(std::launch::async, _KFAST<nonmax_suppression, true, false>, data, cols, 0, row + 4, stride, std::ref(thread_kps[0]), threshold);
                         int i = 1;
                         for (; i < hw_concur - 1; ++i) {
                                 int start_row = row - 4;
                                 int delta = (rows - row - 1) / (hw_concur - i) + 1;
-                                fut[i] = std::async(std::launch::async, _KFAST<nonmax_suppression>, data + start_row*stride, cols, start_row, delta + 8, stride, std::ref(thread_kps[i]), threshold, false, false);
+                                fut[i] = std::async(std::launch::async, _KFAST<nonmax_suppression, false, false>, data + start_row*stride, cols, start_row, delta + 8, stride, std::ref(thread_kps[i]), threshold);
                                 row += delta;
                         }
                         int start_row = row - 4;
-                        fut[i] = std::async(std::launch::async, _KFAST<nonmax_suppression>, data + start_row*stride, cols, start_row, rows - start_row, stride, std::ref(thread_kps[i]), threshold, false, true);
+                        fut[i] = std::async(std::launch::async, _KFAST<nonmax_suppression, false, true>, data + start_row*stride, cols, start_row, rows - start_row, stride, std::ref(thread_kps[i]), threshold);
                         keypoints.clear();
                         keypoints.reserve(8500);
                         for (int j = 0; j <= i; ++j) {
@@ -431,7 +432,7 @@ void KFAST(const uint8_t* __restrict const data, const int32_t cols, const int32
         else {
                 keypoints.clear();
                 keypoints.reserve(8500);
-                _KFAST<nonmax_suppression>(data, cols, 0, rows, stride, keypoints, threshold, true, true);
+                _KFAST<nonmax_suppression, true, true>(data, cols, 0, rows, stride, keypoints, threshold);
         }
 }
 
