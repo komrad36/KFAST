@@ -25,4 +25,4 @@ On Linux you can do:
  
  Simply plugging KFAST into ORB results in a several-fold speed improvement; however, there are a LOT of other things that need to be improved about ORB too, and I am working on it as time permits. I'll release them all at once when finished.
  
- I would like to thank Dr. Rosten for his brilliant FAST and FASTER corner detectors. You can visit his website at edwardrosten.com or his GitHub at https://github.com/edrosten.
+ I would like to thank Dr. Rosten for his brilliant FAST and FASTER corner detectors. You can visit his website at www.edwardrosten.com or his GitHub at https://github.com/edrosten.
