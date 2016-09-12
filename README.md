@@ -1,4 +1,7 @@
 # KFAST
+
+![picture alt](https://raw.githubusercontent.com/komrad36/KFAST/master/results.jpg "Speed comparison of KFAST vs. other implementations")
+
 KFAST is the fastest CPU implementation of the FAST feature detector for computer vision, as described in the 2006 paper by Rosten and Drummond:
  
 "Machine learning for high-speed corner detection" by Edward Rosten and Tom Drummond
