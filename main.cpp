@@ -6,7 +6,7 @@
 *	kareem.omar@uah.edu
 *	https://github.com/komrad36
 *
-*	Last updated Jul 11, 2016
+*	Last updated Sep 12, 2016
 *******************************************************************/
 //
 // Implementation of the FAST corner feature detector with optional
@@ -25,98 +25,144 @@
 //
 
 #include <chrono>
-#include <iostream>
 #include <iomanip>
+#include <iostream>
 #include <opencv2/opencv.hpp>
 #include <string>
 #include <vector>
 
 #include "KFAST.h"
 
+extern "C" {
+#include "Rosten/fast.h"
+}
+
 #define VC_EXTRALEAN
 #define WIN32_LEAN_AND_MEAN
 
-using namespace std::literals;
 using namespace std::chrono;
 
-void printReport(const std::string& name, const nanoseconds& dur, size_t num_keypoints) {
-	std::cout << std::setw(20) << name << " took " << std::setw(10) << static_cast<double>(dur.count()) * 1e-3 << " us / 30,000 us to find " << std::setw(5) << num_keypoints << " keypoint" << (num_keypoints == 1 ? "." : "s.") << std::endl;
+void printReport(const std::string& name, const nanoseconds& dur, const size_t num_keypoints, const int width, const nanoseconds& comp = nanoseconds(0)) {
+	std::cout << std::left << std::setprecision(6) << std::setw(10) << name << " took " << std::setw(7) << static_cast<double>(dur.count()) * 1e-3 << " us to find " << std::setw(width) << num_keypoints << (num_keypoints == 1 ? " keypoint" : " keypoints");
+	if (comp.count() && comp < dur) {
+		std::cout << " (" << std::setprecision(4) << std::setw(4) << static_cast<double>(dur.count()) / comp.count() << "x slower than KFAST)." << std::endl;
+	}
+	else {
+		std::cout << '.' << std::endl;
+	}
 }
 
-int main(int argc, char* argv[]) {
-	static_cast<void>(argc);
-	static_cast<void>(argv);
-
-	constexpr bool display_images = false;
-	constexpr bool nonmax_suppression = true;
-	constexpr auto warmups = 100;
-	constexpr auto Kruns = 1000;
-	constexpr auto CVruns = 1;
+int main() {
+	// ------------- Configuration ------------
+	constexpr bool display_image = false;
+	constexpr bool nonmax_suppress = true;
+	constexpr auto warmups = 150;
+	constexpr auto runs = 1000;
 	constexpr auto thresh = 50;
-	constexpr bool multithreading = true;
+	constexpr bool KFAST_multithread = true;
 	constexpr char name[] = "test.jpg";
+	// --------------------------------
 
+
+	// ------------- Image Read ------------
 	cv::Mat image;
 	image = cv::imread(name, CV_LOAD_IMAGE_GRAYSCALE);
 	if (!image.data) {
 		std::cerr << "ERROR: failed to open image. Aborting." << std::endl;
 		return EXIT_FAILURE;
 	}
+	// --------------------------------
 
-	std::vector<Keypoint> my_keypoints;
-	// warmup
-	for (int i = 0; i < warmups; ++i) KFAST<multithreading, nonmax_suppression>(image.data, image.cols, image.rows, static_cast<int>(image.step), my_keypoints, thresh);
-	my_keypoints.clear();
+
+	// ------------- KFAST ------------
+	std::vector<Keypoint> KFAST_kps;
+	nanoseconds KFAST_ns;
+	std::cout << std::endl << "------------- KFAST ------------" << std::endl << "Warming up..." << std::endl;
+	for (int i = 0; i < warmups; ++i) KFAST<KFAST_multithread, nonmax_suppress>(image.data, image.cols, image.rows, static_cast<int>(image.step), KFAST_kps, thresh);
+	std::cout << "Testing..." << std::endl;
 	{
-		high_resolution_clock::time_point start = high_resolution_clock::now();
-		for (int32_t i = 0; i < Kruns; ++i) {
-			KFAST<multithreading, nonmax_suppression>(image.data, image.cols, image.rows, static_cast<int>(image.step), my_keypoints, thresh);
+		const high_resolution_clock::time_point start = high_resolution_clock::now();
+		for (int32_t i = 0; i < runs; ++i) {
+			KFAST<KFAST_multithread, nonmax_suppress>(image.data, image.cols, image.rows, static_cast<int>(image.step), KFAST_kps, thresh);
 		}
-		high_resolution_clock::time_point end = high_resolution_clock::now();
-		nanoseconds sum = (end - start) / Kruns;
-		printReport("my FAST", sum, my_keypoints.size());
+		const high_resolution_clock::time_point end = high_resolution_clock::now();
+		KFAST_ns = (end - start) / runs;
 	}
+	// --------------------------------
 
 
-	std::vector<cv::KeyPoint> keypoints;
-	// warmup
-	for (int i = 0; i < warmups; ++i) cv::FAST(image, keypoints, thresh, nonmax_suppression);
-	keypoints.clear();
+	// ------------- OpenCV ------------
+	std::vector<cv::KeyPoint> CV_kps;
+	nanoseconds CV_ns;
+	std::cout << "------------ OpenCV ------------" << std::endl << "Warming up..." << std::endl;
+	for (int i = 0; i < warmups; ++i) cv::FAST(image, CV_kps, thresh, nonmax_suppress);
+	std::cout << "Testing..." << std::endl;
 	{
-		high_resolution_clock::time_point start = high_resolution_clock::now();
-		for (int32_t i = 0; i < CVruns; ++i) {
-			cv::FAST(image, keypoints, thresh, nonmax_suppression);
+		const high_resolution_clock::time_point start = high_resolution_clock::now();
+		for (int32_t i = 0; i < runs; ++i) {
+			cv::FAST(image, CV_kps, thresh, nonmax_suppress);
 		}
-		high_resolution_clock::time_point end = high_resolution_clock::now();
-		nanoseconds sum = (end - start) / CVruns;
-		printReport("OpenCV", sum, keypoints.size());
+		const high_resolution_clock::time_point end = high_resolution_clock::now();
+		CV_ns = (end - start) / runs;
 	}
+	// --------------------------------
 
-	if (keypoints.size() != my_keypoints.size()) {
-		std::cout << "ERROR! Sizes disagree!!!!!" << std::endl;
+
+	// ------------- Dr. Rosten ------------
+	int R_size;
+	xy* R_kps;
+	nanoseconds R_ns;
+	std::cout << "---------- Dr. Rosten ----------" << std::endl << "Warming up..." << std::endl;
+	for (int i = 0; i < warmups; ++i) {
+		R_kps = (nonmax_suppress ? fast9_detect_nonmax : fast9_detect)(image.data, image.cols, image.rows, static_cast<int>(image.step), thresh, &R_size);
+		free(R_kps);
+	}
+	{
+		std::cout << "Testing..." << std::endl;
+		const high_resolution_clock::time_point start = high_resolution_clock::now();
+		for (int32_t i = 0; i < runs; ++i) {
+			R_kps = (nonmax_suppress ? fast9_detect_nonmax : fast9_detect)(image.data, image.cols, image.rows, static_cast<int>(image.step), thresh, &R_size);
+			if (i != runs - 1) free(R_kps);
+		}
+		const high_resolution_clock::time_point end = high_resolution_clock::now();
+		R_ns = (end - start) / runs;
+	}
+	std::cout << "--------------------------------" << std::endl << std::endl << "Verifying results..." << std::endl << std::endl;
+	// --------------------------------
+
+
+	// ------------- Verification ------------
+	if (CV_kps.size() != KFAST_kps.size() || CV_kps.size() != static_cast<size_t>(R_size)) {
+		std::cerr << "ERROR! Sizes disagree!" << std::endl << std::endl;
 	}
 	else {
-		for (size_t i = 0; i < keypoints.size(); ++i) {
-			if (keypoints[i].pt.x != my_keypoints[i].x || keypoints[i].pt.y != my_keypoints[i].y) {
-				std::cout << "ERROR! Points disagree!!!!!" << std::endl;
+		int i = 0;
+		for (; i < R_size; ++i) {
+			if (CV_kps[i].pt.x != KFAST_kps[i].x || CV_kps[i].pt.y != KFAST_kps[i].y || CV_kps[i].pt.x != R_kps[i].x || CV_kps[i].pt.y != R_kps[i].y) {
+				std::cerr << "ERROR! One or more points disagree!" << std::endl << std::endl;
 				break;
 			}
 		}
+		if (i == R_size) std::cout << "All keypoints agree! Test valid." << std::endl << std::endl;
 	}
+	free(R_kps);
+	// --------------------------------
 
-	if (display_images) {
-		cv::Mat image2;
-		cv::drawKeypoints(image, keypoints, image2, cv::Scalar(255.0, 0.0, 0.0));
-		cv::namedWindow("OpenCV FAST", CV_WINDOW_NORMAL | CV_WINDOW_KEEPRATIO);
-		cv::imshow("OpenCV FAST", image2);
-
-		cv::Mat image3;
+	
+	// ------------- Output ------------
+	const int max_width = static_cast<int>(ceil(log10(std::max(std::max(KFAST_kps.size(), CV_kps.size()), static_cast<size_t>(R_size)))));
+	printReport("KFAST", KFAST_ns, KFAST_kps.size(), max_width);
+	printReport("OpenCV", CV_ns, CV_kps.size(), max_width, KFAST_ns);
+	printReport("Dr. Rosten", R_ns, R_size, max_width, KFAST_ns);
+	std::cout << std::endl;
+	if (display_image) {
 		std::vector<cv::KeyPoint> converted_kps;
-		for (const auto& kp : my_keypoints) converted_kps.emplace_back(static_cast<float>(kp.x), static_cast<float>(kp.y), 0.0f, 0.0f, static_cast<float>(kp.score));
-
-		cv::drawKeypoints(image, converted_kps, image3, cv::Scalar(255.0, 0.0, 0.0));
+		for (const auto& kp : KFAST_kps) converted_kps.emplace_back(static_cast<float>(kp.x), static_cast<float>(kp.y), 0.0f, 0.0f, static_cast<float>(kp.score));
+		cv::Mat image_with_kps;
+		cv::drawKeypoints(image, converted_kps, image_with_kps, {255.0, 0.0, 0.0});
 		cv::namedWindow("KFAST", CV_WINDOW_NORMAL | CV_WINDOW_KEEPRATIO);
-		cv::imshow("KFAST", image3);
+		cv::imshow("KFAST", image_with_kps);
 		cv::waitKey(0);
 	}
+	// --------------------------------
 }

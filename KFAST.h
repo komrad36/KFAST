@@ -6,7 +6,7 @@
 *	kareem.omar@uah.edu
 *	https://github.com/komrad36
 *
-*	Last updated Jul 25, 2016
+*	Last updated Sep 12, 2016
 *******************************************************************/
 //
 // Implementation of the FAST corner feature detector with optional
@@ -38,7 +38,6 @@ struct Keypoint {
 	uint8_t score;
 
 	Keypoint(const int32_t _x, const int32_t _y, const uint8_t _score) : x(_x), y(_y), score(_score) {}
-
 };
 
 // Yes, this function MUST be inlined.
@@ -176,101 +175,98 @@ void processCols(int32_t& num_corners, const uint8_t* __restrict & ptr, int32_t&
 		static_cast<uint32_t>(_mm256_movemask_epi8(_mm256_cmpgt_epi8(_mm256_max_epu8(ppt_max, pmt_max), consec))) :
 		static_cast<uint32_t>(_mm256_movemask_epi8(_mm256_cmpgt_epi8(_mm256_max_epu8(ppt_max, pmt_max), consec))) & last_cols_mask;
 
-	// for each of the 32 pixels considered in vector,
-	// and while there are still corners left in the mask
-	for (int32_t k = 0; m; ++k, m >>= 1) {
-		// if this one is a corner
-		if (m & 1) {
-			if (nonmax_suppression) {
-				// add it!
-				corners[num_corners++] = j + k;
+	// visit each corner in the mask
+	while (m) {
+		const uint32_t x = _tzcnt_u32(m);
+		m = _blsr_u32(m);
+		if (nonmax_suppression) {
+			// add it!
+			corners[num_corners++] = j + x;
 
-				// --- BEGIN COMPUTE CORNER SCORE ---
+			// --- BEGIN COMPUTE CORNER SCORE ---
 
-				// inlining gives measurably better performance but g++
-				// refuses to so I do, manually
+			// inlining gives measurably better performance
 
-				const uint8_t* ptrpk = ptr + k;
+			const uint8_t* ptrpk = ptr + x;
 
-				// the actual offsets value of point p
-				const int16_t p = static_cast<int16_t>(*ptrpk);
+			// the actual offsets value of point p
+			const int16_t p = static_cast<int16_t>(*ptrpk);
 
-				int16_t ring[24];
-				for (int n = 0; n < 24; ++n) ring[n] = p - static_cast<int16_t>(ptrpk[offsets[n]]);
+			int16_t ring[24];
+			for (int n = 0; n < 24; ++n) ring[n] = p - static_cast<int16_t>(ptrpk[offsets[n]]);
 
-				int16_t* ringp = ring;
+			int16_t* ringp = ring;
 
-				// points 0-15
-				__m256i ringv = _mm256_loadu_si256(reinterpret_cast<__m256i*>(ringp++));
+			// points 0-15
+			__m256i ringv = _mm256_loadu_si256(reinterpret_cast<__m256i*>(ringp++));
 
-				// points 1-16
-				__m256i ringv2 = _mm256_loadu_si256(reinterpret_cast<__m256i*>(ringp++));
-				__m256i minv = _mm256_min_epi16(ringv, ringv2);
-				__m256i maxv = _mm256_max_epi16(ringv, ringv2);
+			// points 1-16
+			__m256i ringv2 = _mm256_loadu_si256(reinterpret_cast<__m256i*>(ringp++));
+			__m256i minv = _mm256_min_epi16(ringv, ringv2);
+			__m256i maxv = _mm256_max_epi16(ringv, ringv2);
 
-				// points 2-17
-				ringv = _mm256_loadu_si256(reinterpret_cast<__m256i*>(ringp++));
-				minv = _mm256_min_epi16(minv, ringv);
-				maxv = _mm256_max_epi16(maxv, ringv);
+			// points 2-17
+			ringv = _mm256_loadu_si256(reinterpret_cast<__m256i*>(ringp++));
+			minv = _mm256_min_epi16(minv, ringv);
+			maxv = _mm256_max_epi16(maxv, ringv);
 
-				// points 3-18
-				ringv = _mm256_loadu_si256(reinterpret_cast<__m256i*>(ringp++));
-				minv = _mm256_min_epi16(minv, ringv);
-				maxv = _mm256_max_epi16(maxv, ringv);
+			// points 3-18
+			ringv = _mm256_loadu_si256(reinterpret_cast<__m256i*>(ringp++));
+			minv = _mm256_min_epi16(minv, ringv);
+			maxv = _mm256_max_epi16(maxv, ringv);
 
-				// points 4-19
-				ringv = _mm256_loadu_si256(reinterpret_cast<__m256i*>(ringp++));
-				minv = _mm256_min_epi16(minv, ringv);
-				maxv = _mm256_max_epi16(maxv, ringv);
+			// points 4-19
+			ringv = _mm256_loadu_si256(reinterpret_cast<__m256i*>(ringp++));
+			minv = _mm256_min_epi16(minv, ringv);
+			maxv = _mm256_max_epi16(maxv, ringv);
 
-				// points 5-20
-				ringv = _mm256_loadu_si256(reinterpret_cast<__m256i*>(ringp++));
-				minv = _mm256_min_epi16(minv, ringv);
-				maxv = _mm256_max_epi16(maxv, ringv);
+			// points 5-20
+			ringv = _mm256_loadu_si256(reinterpret_cast<__m256i*>(ringp++));
+			minv = _mm256_min_epi16(minv, ringv);
+			maxv = _mm256_max_epi16(maxv, ringv);
 
-				// points 6-21
-				ringv = _mm256_loadu_si256(reinterpret_cast<__m256i*>(ringp++));
-				minv = _mm256_min_epi16(minv, ringv);
-				maxv = _mm256_max_epi16(maxv, ringv);
+			// points 6-21
+			ringv = _mm256_loadu_si256(reinterpret_cast<__m256i*>(ringp++));
+			minv = _mm256_min_epi16(minv, ringv);
+			maxv = _mm256_max_epi16(maxv, ringv);
 
-				// points 7-22
-				ringv = _mm256_loadu_si256(reinterpret_cast<__m256i*>(ringp++));
-				minv = _mm256_min_epi16(minv, ringv);
-				maxv = _mm256_max_epi16(maxv, ringv);
+			// points 7-22
+			ringv = _mm256_loadu_si256(reinterpret_cast<__m256i*>(ringp++));
+			minv = _mm256_min_epi16(minv, ringv);
+			maxv = _mm256_max_epi16(maxv, ringv);
 
-				// points 8-23
-				ringv = _mm256_loadu_si256(reinterpret_cast<__m256i*>(ringp));
-				minv = _mm256_min_epi16(minv, ringv);
-				maxv = _mm256_max_epi16(maxv, ringv);
+			// points 8-23
+			ringv = _mm256_loadu_si256(reinterpret_cast<__m256i*>(ringp));
+			minv = _mm256_min_epi16(minv, ringv);
+			maxv = _mm256_max_epi16(maxv, ringv);
 
-				// minv now has the smallest of [0-8], [1-9], ..., [14-6], [15-7] (all 16 possible regions of 9 pixels)
-				// maxv now has the largest of  [0-8], [1-9], ..., [14-6], [15-7] (all 16 possible regions of 9 pixels)
+			// minv now has the smallest of [0-8], [1-9], ..., [14-6], [15-7] (all 16 possible regions of 9 pixels)
+			// maxv now has the largest of  [0-8], [1-9], ..., [14-6], [15-7] (all 16 possible regions of 9 pixels)
 
-				// inside expression is just the negation of maxv
-				// to get expression of absolute deviation from center offsets, resulting in
-				// the greatest deviation among:
-				// [0-8], [1-9], ..., [14-6], [15-7] (all 16 possible regions of 9 pixels)
-				
-				maxv = _mm256_max_epi16(minv, _mm256_sub_epi16(_mm256_setzero_si256(), maxv));
+			// inside expression is just the negation of maxv
+			// to get expression of absolute deviation from center offsets, resulting in
+			// the greatest deviation among:
+			// [0-8], [1-9], ..., [14-6], [15-7] (all 16 possible regions of 9 pixels)
 
-				// The overall single max is now found through a horizontal reduction of 'maxv'.
-				// This score represents the deviation of the most deviant region of 9 pixels.
-				// The answer resides in an epi16 but it will be in
-				// the range of a uint8_t for efficient removal from the YMM
-				// (actually should just pull from XMM)
-				maxv = _mm256_max_epi16(maxv, _mm256_permute4x64_epi64(maxv, 0b1110));
-				maxv = _mm256_max_epi16(maxv, _mm256_permute4x64_epi64(maxv, 0b11100101));
-				maxv = _mm256_max_epi16(maxv, _mm256_shuffle_epi32(maxv, 0b11100101));
-				maxv = _mm256_max_epi16(maxv, _mm256_shufflelo_epi16(maxv, 0b11100101));
+			maxv = _mm256_max_epi16(minv, _mm256_sub_epi16(_mm256_setzero_si256(), maxv));
 
-				cur[j + k] = *reinterpret_cast<uint8_t*>(&maxv);
+			// The overall single max is now found through a horizontal reduction of 'maxv'.
+			// This score represents the deviation of the most deviant region of 9 pixels.
+			// The answer resides in an epi16 but it will be in
+			// the range of a uint8_t for efficient removal from the YMM
+			// (actually should just pull from XMM)
+			maxv = _mm256_max_epi16(maxv, _mm256_permute4x64_epi64(maxv, 0b1110));
+			maxv = _mm256_max_epi16(maxv, _mm256_permute4x64_epi64(maxv, 0b11100101));
+			maxv = _mm256_max_epi16(maxv, _mm256_shuffle_epi32(maxv, 0b11100101));
+			maxv = _mm256_max_epi16(maxv, _mm256_shufflelo_epi16(maxv, 0b11100101));
 
-				// --- END COMPUTE CORNER SCORE ---
+			cur[j + x] = *reinterpret_cast<uint8_t*>(&maxv);
 
-			}
-			else {
-				keypoints.emplace_back(j + k, start_row + i, 0);
-			}
+			// --- END COMPUTE CORNER SCORE ---
+
+		}
+		else {
+			keypoints.emplace_back(j + x, start_row + i, 0);
 		}
 	}
 }
@@ -323,7 +319,7 @@ void _KFAST(const uint8_t* __restrict const data, const int32_t cols, const int3
 	int32_t j;
 	for (int32_t i = 3; i < rows - 2; ++i) {
 
-		// ptr points to the first valid offsets in the row but HASN'T retrieved it yet
+		// ptr points to the first valid offsets in the row but hasn't retrieved it yet
 		const uint8_t* ptr = data + i*stride + 3;
 
 		uint8_t* cur = nullptr;
@@ -357,13 +353,9 @@ void _KFAST(const uint8_t* __restrict const data, const int32_t cols, const int3
 		if (nonmax_suppression) {
 			corners[-1] = num_corners;
 
-			// for first thread: skip 3, rows - 3
-			// for inner threads: skip 3, 4, rows - 3
-			// for last thread: skip 3, 4
-
-			// if i == 3
-			// if not last thread and i == rows - 3
-			// if not first thread and i == 4
+			// for first thread: skip first and last row
+			// for inner threads: skip first, second, last row
+			// for last thread: skip first and second row
 			if ((!last_thread && i == rows - 3) || (!first_thread && i == 4) || i == 3) continue;
 
 			// last buffered row
@@ -411,15 +403,15 @@ void KFAST(const uint8_t* __restrict const data, const int32_t cols, const int32
                 }
                 else {
                         int row = (rows - 1) / hw_concur + 1;
-                        fut[0] = std::async(std::launch::async, _KFAST<nonmax_suppression, true, false>, data, cols, 0, row + 4, stride, std::ref(thread_kps[0]), threshold);
+                        fut[0] = std::async(std::launch::async, _KFAST<nonmax_suppression, true, false>, data, cols, 0, row + (3 + nonmax_suppression), stride, std::ref(thread_kps[0]), threshold);
                         int i = 1;
                         for (; i < hw_concur - 1; ++i) {
-                                int start_row = row - 4;
-                                int delta = (rows - row - 1) / (hw_concur - i) + 1;
-                                fut[i] = std::async(std::launch::async, _KFAST<nonmax_suppression, false, false>, data + start_row*stride, cols, start_row, delta + 8, stride, std::ref(thread_kps[i]), threshold);
+                                const int start_row = row - (3 + nonmax_suppression);
+                                const int delta = (rows - row - 1) / (hw_concur - i) + 1;
+                                fut[i] = std::async(std::launch::async, _KFAST<nonmax_suppression, false, false>, data + start_row*stride, cols, start_row, delta + ((3 + nonmax_suppression) << 1), stride, std::ref(thread_kps[i]), threshold);
                                 row += delta;
                         }
-                        int start_row = row - 4;
+                        int start_row = row - (3 + nonmax_suppression);
                         fut[i] = std::async(std::launch::async, _KFAST<nonmax_suppression, false, true>, data + start_row*stride, cols, start_row, rows - start_row, stride, std::ref(thread_kps[i]), threshold);
                         keypoints.clear();
                         keypoints.reserve(8500);
