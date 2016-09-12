@@ -4,5 +4,9 @@
 !README.md
 !.gitignore
 !test.jpg
-!Rosten
+!Rosten/
+!Rosten/*.c
+!Rosten/*.h
+!Rosten/LICENSE
+!Rosten/README
 !Makefile
