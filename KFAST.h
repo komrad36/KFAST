@@ -396,7 +396,7 @@ void KFAST(const uint8_t* __restrict const data, const int32_t cols, const int32
                 std::vector<std::vector<Keypoint>> thread_kps(hw_concur);
                 std::vector<std::future<void>> fut(hw_concur);
 
-                if (hw_concur == 1) {
+                if (hw_concur <= 1) {
                         keypoints.clear();
                         keypoints.reserve(8500);
                         _KFAST<nonmax_suppression, true, true>(data, cols, 0, rows, stride, keypoints, threshold);

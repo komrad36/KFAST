@@ -65,8 +65,7 @@ int main() {
 
 
 	// ------------- Image Read ------------
-	cv::Mat image;
-	image = cv::imread(name, CV_LOAD_IMAGE_GRAYSCALE);
+	cv::Mat image = cv::imread(name, CV_LOAD_IMAGE_GRAYSCALE);
 	if (!image.data) {
 		std::cerr << "ERROR: failed to open image. Aborting." << std::endl;
 		return EXIT_FAILURE;
