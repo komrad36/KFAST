@@ -145,11 +145,10 @@ void processCols(int32_t& num_corners, const uint8_t* __restrict & ptr, int32_t&
 	}
 
 	// profiling suggests it's not worth further bailout checks for 8, 4, 2, 1
-
 	__m256i ppt_cnt = _mm256_setzero_si256();
-	__m256i pmt_cnt = ppt_cnt;
-	__m256i ppt_max = ppt_cnt;
-	__m256i pmt_max = pmt_cnt;
+	__m256i pmt_cnt = _mm256_setzero_si256();
+	__m256i ppt_max = _mm256_setzero_si256();
+	__m256i pmt_max = _mm256_setzero_si256();
 
 	// for each of the 24 pixels in the circle (wrapping around extra 8 at the end)
 	for (int32_t k = 0; k < 24; ++k) {
@@ -161,12 +160,9 @@ void processCols(int32_t& num_corners, const uint8_t* __restrict & ptr, int32_t&
 
 		// add 1 to the chain count for all salient pixels,
 		// then AND with pmt_accum to destroy any exiting chain that was broken
-		// at this offsets
-		ppt_cnt = _mm256_and_si256(_mm256_sub_epi8(ppt_cnt, ppt_accum), ppt_accum);
-		pmt_cnt = _mm256_and_si256(_mm256_sub_epi8(pmt_cnt, pmt_accum), pmt_accum);
-
-		ppt_max = _mm256_max_epu8(ppt_max, ppt_cnt);
-		pmt_max = _mm256_max_epu8(pmt_max, pmt_cnt);
+		// at this offset
+		ppt_max = _mm256_max_epu8(ppt_max, ppt_cnt = _mm256_and_si256(_mm256_sub_epi8(ppt_cnt, ppt_accum), ppt_accum));
+		pmt_max = _mm256_max_epu8(pmt_max, pmt_cnt = _mm256_and_si256(_mm256_sub_epi8(pmt_cnt, pmt_accum), pmt_accum));
 	}
 
 	// 'm' now contains one bit for whether each element
@@ -249,18 +245,15 @@ void processCols(int32_t& num_corners, const uint8_t* __restrict & ptr, int32_t&
 			// [0-8], [1-9], ..., [14-6], [15-7] (all 16 possible regions of 9 pixels)
 
 			maxv = _mm256_max_epi16(minv, _mm256_sub_epi16(_mm256_setzero_si256(), maxv));
-
+			
 			// The overall single max is now found through a horizontal reduction of 'maxv'.
 			// This score represents the deviation of the most deviant region of 9 pixels.
-			// The answer resides in an epi16 but it will be in
-			// the range of a uint8_t for efficient removal from the YMM
-			// (actually should just pull from XMM)
-			maxv = _mm256_max_epi16(maxv, _mm256_permute4x64_epi64(maxv, 0b1110));
-			maxv = _mm256_max_epi16(maxv, _mm256_permute4x64_epi64(maxv, 0b11100101));
-			maxv = _mm256_max_epi16(maxv, _mm256_shuffle_epi32(maxv, 0b11100101));
-			maxv = _mm256_max_epi16(maxv, _mm256_shufflelo_epi16(maxv, 0b11100101));
-
-			cur[j + x] = *reinterpret_cast<uint8_t*>(&maxv);
+			// _mm_minpos_epu16() emits the phminposuw instruction from SSE4. Have to
+			// correct for signed->unsigned, and also for max, not min. Can shift into
+			// the correct space with just a single subtract operation.
+			cur[j + x] = static_cast<uint8_t>(_mm_cvtsi128_si32(_mm_sub_epi16(_mm_set1_epi16(32767),
+				_mm_minpos_epu16(_mm_sub_epi16(_mm_set1_epi16(32767),
+					_mm_max_epi16(_mm256_extractf128_si256(maxv, 1), _mm256_castsi256_si128(maxv)))))));
 
 			// --- END COMPUTE CORNER SCORE ---
 
