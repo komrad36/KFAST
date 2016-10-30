@@ -253,7 +253,7 @@ void processCols(int32_t& num_corners, const uint8_t* __restrict & ptr, int32_t&
 			// the correct space with just a single subtract operation.
 			cur[j + x] = static_cast<uint8_t>(_mm_cvtsi128_si32(_mm_sub_epi16(_mm_set1_epi16(32767),
 				_mm_minpos_epu16(_mm_sub_epi16(_mm_set1_epi16(32767),
-					_mm_max_epi16(_mm256_extractf128_si256(maxv, 1), _mm256_castsi256_si128(maxv)))))));
+					_mm_max_epi16(_mm256_extracti128_si256(maxv, 1), _mm256_castsi256_si128(maxv)))))));
 
 			// --- END COMPUTE CORNER SCORE ---
 
