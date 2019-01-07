@@ -365,10 +365,10 @@ void _KFAST(const uint8_t* __restrict const data, const int32_t cols, const int3
 		}
 
 		if (i < rows - 3) {
-			// for col (3) to (cols - 35)
+			// for col (3) to (cols - 34)
 			// jumping forward 32 cols at a time and also moving ptr forward 32 cols each time with it
 			// these calls to processCols MUST be inlined for best performance, even if your compiler thinks otherwise
-			for (j = 3; j < cols - 35; j += 32, ptr += 32) {
+			for (j = 3; j < cols - 34; j += 32, ptr += 32) {
 				processCols<true, nonmax_suppression>(num_corners, ptr, j, offsets, ushft, t,
 					cols, consec, corners, cur, keypoints, i, start_row);
 			}
