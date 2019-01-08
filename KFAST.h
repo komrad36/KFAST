@@ -279,7 +279,7 @@ void processCols(int32_t& num_corners, const uint8_t* __restrict & ptr, int32_t&
 			// [0-8], [1-9], ..., [14-6], [15-7] (all 16 possible regions of 9 pixels)
 
 			maxv = _mm256_max_epi16(minv, _mm256_sub_epi16(_mm256_setzero_si256(), maxv));
-			
+
 			// The overall single max is now found through a horizontal reduction of 'maxv'.
 			// This score represents the deviation of the most deviant region of 9 pixels.
 			// _mm_minpos_epu16() emits the phminposuw instruction from SSE4. Have to
@@ -293,7 +293,7 @@ void processCols(int32_t& num_corners, const uint8_t* __restrict & ptr, int32_t&
 
 		}
 		else {
-			keypoints.emplace_back(j + x, start_row + i, 0);
+			keypoints.emplace_back(j + x, start_row + i, uint8_t(0));
 		}
 	}
 }
