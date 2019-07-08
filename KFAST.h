@@ -372,9 +372,11 @@ void _KFAST(const uint8_t* __restrict const data, const int32_t cols, const int3
 				processCols<true, nonmax_suppression>(num_corners, ptr, j, offsets, ushft, t,
 					cols, consec, corners, cur, keypoints, i, start_row);
 			}
-			// handle last few columns
-			processCols<false, nonmax_suppression>(num_corners, ptr, j, offsets, ushft, t,
-				cols, consec, corners, cur, keypoints, i, start_row);
+			if (cols - j - 3 > 0) {
+				// handle last few columns
+				processCols<false, nonmax_suppression>(num_corners, ptr, j, offsets, ushft, t,
+					cols, consec, corners, cur, keypoints, i, start_row);
+			}
 		}
 
 		if (nonmax_suppression) {
