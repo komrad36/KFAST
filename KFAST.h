@@ -156,7 +156,7 @@ void processCols(int32_t& num_corners, const uint8_t* __restrict & ptr, int32_t&
 	// the normal full 32 columns, or special handling for the last few columns if they
 	// don't divide up evenly into 32
 	uint32_t last_cols_mask;
-	if (!full) last_cols_mask = (1 << (cols - j - 3)) - 1;
+	if (!full) last_cols_mask = static_cast<uint32_t>((1ull << (cols - j - 3)) - 1);
 
 	// 'mask' now contains one bit for each element
 	// which is SET if that element COULD be a corner based on the 2 consective cardinal point test
