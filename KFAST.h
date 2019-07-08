@@ -62,6 +62,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <cstring>
 #include <future>
 #include <immintrin.h>
 #include <vector>
@@ -88,7 +89,38 @@ void processCols(int32_t& num_corners, const uint8_t* __restrict & ptr, int32_t&
 	const __m256i& consec, int32_t* const __restrict corners, uint8_t* const __restrict cur,
 	std::vector<Keypoint>& keypoints, const int32_t i, const int32_t start_row) {
 	// ppt is an integer vector that now holds 32 of point p
-	__m256i ppt = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(ptr));
+	__m256i ppt, p9, p5, p1, p13;
+	if (full) {
+		ppt = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(ptr));
+
+		// Rosten's point 9 for all 32 pixels in consideration
+		p9 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(ptr + *offsets));
+
+		// Rosten's point 5
+		p5 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(ptr + offsets[4]));
+
+		// Rosten's point 1
+		p1 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(ptr + offsets[8]));
+
+		// Rosten's point 13
+		p13 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(ptr + offsets[12]));
+	}
+	else {
+		// to avoid reading into the next row and generating false features.
+		ppt = _mm256_setzero_si256();
+		p9 = p5 = p1 = p13 = ppt;
+
+		memcpy(&ppt, ptr, cols - j - 3);
+		memcpy(&p9, ptr + offsets[0], cols - j - 3);
+		memcpy(&p5, ptr + offsets[4], cols - j - 3);
+		memcpy(&p1, ptr + offsets[8], cols - j - 3);
+		memcpy(&p13, ptr + offsets[12], cols - j - 3);
+	}
+
+	p9 = _mm256_xor_si256(p9, ushft);
+	p5 = _mm256_xor_si256(p5, ushft);
+	p1 = _mm256_xor_si256(p1, ushft);
+	p13 = _mm256_xor_si256(p13, ushft);
 
 	// we subtract (and clamp) the threshold value from all 32 pixels
 	// pmt represents p - t
@@ -97,18 +129,6 @@ void processCols(int32_t& num_corners, const uint8_t* __restrict & ptr, int32_t&
 	// we add (and clamp) the threshold value to all 32 pixels
 	// ppt represents p + t
 	ppt = _mm256_xor_si256(_mm256_adds_epu8(ppt, t), ushft);
-
-	// Rosten's point 9 for all 32 pixels in consideration
-	__m256i p9 = _mm256_xor_si256(_mm256_loadu_si256(reinterpret_cast<const __m256i*>(ptr + *offsets)), ushft);
-
-	// Rosten's point 5
-	__m256i p5 = _mm256_xor_si256(_mm256_loadu_si256(reinterpret_cast<const __m256i*>(ptr + offsets[4])), ushft);
-
-	// Rosten's point 1
-	__m256i p1 = _mm256_xor_si256(_mm256_loadu_si256(reinterpret_cast<const __m256i*>(ptr + offsets[8])), ushft);
-
-	// Rosten's point 13
-	__m256i p13 = _mm256_xor_si256(_mm256_loadu_si256(reinterpret_cast<const __m256i*>(ptr + offsets[12])), ushft);
 
 	// compare p's against p9's
 	// compare p's against p5's
@@ -187,7 +207,17 @@ void processCols(int32_t& num_corners, const uint8_t* __restrict & ptr, int32_t&
 	// for each of the 24 pixels in the circle (wrapping around extra 8 at the end)
 	for (int32_t k = 0; k < 24; ++k) {
 		// x is a vector of the kth member of the circle
-		__m256i p = _mm256_xor_si256(_mm256_loadu_si256(reinterpret_cast<const __m256i*>(ptr + offsets[k])), ushft);
+		__m256i p;
+		if (full) {
+			p = _mm256_xor_si256(
+				_mm256_loadu_si256(reinterpret_cast<const __m256i*>(ptr + offsets[k])), ushft);
+		}
+		else {
+			p = _mm256_setzero_si256();
+
+			memcpy(&p, ptr + offsets[k], cols - j - 3);
+			p = _mm256_xor_si256(p, ushft);
+		}
 
 		ppt_accum = _mm256_cmpgt_epi8(p, ppt);
 		pmt_accum = _mm256_cmpgt_epi8(pmt, p);
